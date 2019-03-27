@@ -5,6 +5,7 @@ import (
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/jmoiron/sqlx"
 	"log"
+	"os"
 
 	"github.com/go-telegram-bot-api/telegram-bot-api"
 )
@@ -45,7 +46,9 @@ func _main() {
 
 
 func main() {
-	bot, err := tgbotapi.NewBotAPI("667000923:AAEbeQ6rU1zYsCoQ1g16VjxQIA4xLWzg6MQ")
+	key := os.Getenv("TELEGRAM_BOT_KEY")
+	if key == "" { panic("No telegram key present")}
+	bot, err := tgbotapi.NewBotAPI(key)
 	if err != nil {
 		log.Panic(err)
 	}
