@@ -1,93 +1,74 @@
 package main
 
-
 import (
+	"fmt"
+	_ "github.com/go-sql-driver/mysql"
+	"github.com/jmoiron/sqlx"
 	"log"
-	"net/http"
-	"math/rand"
-	"strconv"
-	"encoding/json"
-	"github.com/gorilla/mux"
+
+	"github.com/go-telegram-bot-api/telegram-bot-api"
 )
 
-type Book struct {
-	ID      string `json:"id"`
-	Title   string `json:"title"`
-	Author *Author `json:"author"`
+type User struct {
+	ID   int    `db:"id"`
+	Name string `db:"name"`
 }
 
-type Author struct {
-	Firstname string `json:"firstname"`
-	Lastname  string `json:"lastname"`
+type SafeConn struct {
+	conn sqlx.DB;
+	err error;
 }
 
-var books []Book
-
-func getBooks(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(books)
+func (conn *SafeConn) checkAllIsOK() {
+	if conn.err != nil { panic(conn.err) };
 }
 
-func getBook(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	params := mux.Vars(r)
-	for _, item := range books {
-		if item.ID == params["id"] {
-			json.NewEncoder(w).Encode(item)
-			return
-		}
+func _main() {
+	conn, err := sqlx.Connect("mysql", "root:dummy@tcp(localhost:3306)/story")
+	if err != nil {
+		panic(err)
 	}
-	json.NewEncoder(w).Encode(&Book{})
-}
+	res, err := conn.Exec("INSERT INTO users (name) VALUES(\"Peter\")")
+	if err != nil { panic(err) }
+	id, err := res.LastInsertId()
+	if err != nil { panic(err) }
+	fmt.Printf("Created user with id:%d", id)
+	var user User
+	err = conn.Get(&user, "select * from users where id=?", id)
+	if err != nil { panic(err) }
+	_, err = conn.Exec("UPDATE users set name=\"John\" where id=?", id)
+	if err != nil { panic(err) }
+	_, err = conn.Exec("DELETE FROM users where id=?", id)
+	if err != nil { panic(err) }
 
-func createBook(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	var book Book
-	_ = json.NewDecoder(r.Body).Decode(&book)
-	book.ID = strconv.Itoa(rand.Intn(1000000))
-	books = append(books, book)
-	json.NewEncoder(w).Encode(book)
-}
-
-
-func updateBook(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	params := mux.Vars(r)
-	for index, item := range books {
-		if item.ID == params["id"] {
-			books = append(books[:index], books[index+1:]...)
-			var book Book
-			_ = json.NewDecoder(r.Body).Decode(&book)
-			book.ID = params["id"]
-			books = append(books, book)
-			json.NewEncoder(w).Encode(book)
-			return
-		}
-	}
-	json.NewEncoder(w).Encode(books)
-}
-
-func deleteBook(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	params := mux.Vars(r)
-	for index, item := range books {
-		if item.ID == params["id"] {
-			books = append(books[:index], books[index+1:]...)
-			break
-		}
-	}
-	json.NewEncoder(w).Encode(books)
 }
 
 
 func main() {
-	r := mux.NewRouter()
-	books = append(books, Book{ID: "1", Title: "Война и Мир", Author: &Author{Firstname: "Лев", Lastname: "Толстой"}})
-	books = append(books, Book{ID: "2", Title: "Преступление и наказание", Author: &Author{Firstname: "Фёдор", Lastname: "Достоевский"}})
-	r.HandleFunc("/books", getBooks).Methods("GET")
-	r.HandleFunc("/books/{id}", getBook).Methods("GET")
-	r.HandleFunc("/books", createBook).Methods("POST")
-	r.HandleFunc("/books/{id}", updateBook).Methods("PUT")
-	r.HandleFunc("/books/{id}", deleteBook).Methods("DELETE")
-	log.Fatal(http.ListenAndServe(":8000", r))
+	bot, err := tgbotapi.NewBotAPI("667000923:AAEbeQ6rU1zYsCoQ1g16VjxQIA4xLWzg6MQ")
+	if err != nil {
+		log.Panic(err)
+	}
+
+	bot.Debug = true
+
+	log.Printf("Authorized on account %s", bot.Self.UserName)
+
+	u := tgbotapi.NewUpdate(0)
+	u.Timeout = 60
+
+	updates, err := bot.GetUpdatesChan(u)
+
+	for update := range updates {
+		if update.Message == nil { // ignore any non-Message Updates
+			continue
+		}
+
+		log.Printf("[%s] %s", update.Message.From.UserName, update.Message.Text)
+
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID, update.Message.Text)
+		msg.ReplyToMessageID = update.Message.MessageID
+
+		bot.Send(msg)
+	}
 }
